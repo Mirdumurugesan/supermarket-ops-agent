@@ -1,9 +1,13 @@
-# Agent harness — model-agnostic, so the store isn't coupled to one provider.
-pydantic-ai-slim[groq,openai]>=1.0
+﻿# Agent harness - model-agnostic, so the store isn't coupled to one provider.
+pydantic-ai-slim[groq,google,openai]>=1.0
 
 # Telegram transport
 python-telegram-bot>=21.0
 python-dotenv>=1.0.0
+
+# IANA timezone database. The store closes its day in IST, and Windows ships no
+# system tz database, so zoneinfo needs this explicitly. Harmless elsewhere.
+tzdata>=2024.1
 
 # Artifacts the agent generates
 reportlab>=4.0.0
