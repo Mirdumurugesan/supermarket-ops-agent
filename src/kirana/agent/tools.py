@@ -54,6 +54,42 @@ class ToolSpec:
 
 _REGISTRY: list[ToolSpec] = []
 
+# Money as a shopkeeper writes it: ₹500, Rs.500, rs 500, 1,200, "500".
+_MONEY_NOISE = str.maketrans("", "", "₹, ")
+
+
+def coerce_arguments(schema: dict, args: dict) -> dict:
+    """Make the model's arguments match the types the schema promised.
+
+    The owner types "put rs.500 on Ramesh's credit" and the model faithfully
+    passes `amount="rs.500"` — a string where the service expects a number, so
+    the comparison inside the service raises TypeError and the whole turn dies
+    with "internal error". The model is not wrong to echo the owner's phrasing;
+    the boundary is the right place to normalise it, the same way the tool layer
+    normalises everything else before the services see it.
+
+    Only string→number is coerced, and only for fields the schema declares
+    numeric. Anything that still isn't a number is passed through untouched so
+    it fails loudly rather than silently becoming 0.
+    """
+    props = schema.get("properties") or {}
+    out = dict(args)
+    for key, value in args.items():
+        declared = (props.get(key) or {}).get("type")
+        if declared not in ("number", "integer") or not isinstance(value, str):
+            continue
+        cleaned = value.translate(_MONEY_NOISE).lower()
+        for prefix in ("rs.", "rs", "inr"):
+            if cleaned.startswith(prefix):
+                cleaned = cleaned[len(prefix):]
+                break
+        cleaned = cleaned.strip(".")
+        try:
+            out[key] = int(cleaned) if declared == "integer" else float(cleaned)
+        except ValueError:
+            pass                      # not a number at all — let it fail loudly
+    return out
+
 
 def tool(name: str, description: str, schema: dict):
     """Register an async handler as a tool. Mirrors the shape of most SDK

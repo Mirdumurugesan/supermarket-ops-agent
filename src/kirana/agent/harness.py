@@ -133,7 +133,23 @@ def _build_tools() -> list[Tool]:
     adapted: list[Tool] = []
     for spec in tool_registry.ALL_TOOLS:
         async def run(_spec=spec, **kwargs) -> str:
-            result = await _spec.handler(kwargs)
+            try:
+                args = tool_registry.coerce_arguments(_spec.schema, kwargs)
+                result = await _spec.handler(args)
+            except Exception as exc:                        # noqa: BLE001
+                # A tool that raises is information, not a crash. Letting the
+                # exception escape kills the whole turn and the owner gets
+                # "internal error" for something as ordinary as the model
+                # passing "rs.500" where a number belongs. Handing the failure
+                # back as a tool result lets the model correct itself on the
+                # next step — which is what the control loop is for. Business
+                # refusals never come through here; they return REFUSED text.
+                log.exception("tool %s failed", _spec.name)
+                return (f"ERROR: {_spec.name} could not run — "
+                        f"{type(exc).__name__}: {exc}. Check the arguments "
+                        "(amounts and quantities must be plain numbers like "
+                        "500, not '₹500' or 'rs.500') and try once more, or "
+                        "tell the owner plainly what went wrong.")
             return result["content"][0]["text"]
 
         adapted.append(

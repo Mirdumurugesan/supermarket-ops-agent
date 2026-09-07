@@ -124,7 +124,7 @@ has to be true, it doesn't belong in the prompt.
 pip install -r requirements.txt
 cp .env.example .env          # TELEGRAM_BOT_TOKEN + GROQ_API_KEY + GOOGLE_API_KEY (all free)
 python scripts/seed.py        # 25 real SKUs
-pytest -q                     # 104 passed, ~5s, no API key needed
+pytest -q                     # 115 passed, ~5s, no API key needed
 python -m src.kirana.main
 ```
 
@@ -144,6 +144,6 @@ src/kirana/
   db/        schema.sql · database.py                                 ← invariants as constraints
   docs_gen/  invoice_pdf.py · analysis_pptx.py
   telegram/  bot.py · formatting.py    health.py
-tests/       104 tests — GST maths, oversell, idempotency, threaded concurrency,
+tests/       115 tests — GST maths, oversell, idempotency, threaded concurrency,
              the agent loop, model failover, reply rendering. No key, no network.
 ```
