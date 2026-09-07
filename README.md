@@ -4,7 +4,7 @@ Run an entire Indian kirana store from a Telegram chat — receive stock, cut an
 edit bills, run khata, close the day, generate GST invoices and analysis decks.
 No web app, no admin panel, no forms. The chat *is* the product.
 
-**Bot:** [@YOUR_BOT_HANDLE](https://t.me/YOUR_BOT_HANDLE) · **Demo video:** *(link)*
+**Bot:** [@mirdu_kirana_bot](https://t.me/mirdu_kirana_bot) · **Demo video:** *(link)*
 
 ```
 Owner: 50 packets of Maggi came in, cost ₹12, MRP ₹14
