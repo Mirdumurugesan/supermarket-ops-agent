@@ -201,7 +201,7 @@ def generate_invoice_pdf(bill_id: int) -> str:
         story.append(Paragraph(
             f"<b>On khata</b> — added to {bill.get('khata_customer')}'s ledger.", normal))
     story.append(Spacer(1, 6 * mm))
-    story.append(Paragraph("Thank you, visit again! · This is a computer-generated invoice.", small))
+    story.append(Paragraph("Thank you, visit again!", small))
 
     doc.build(story)
     return str(path)
