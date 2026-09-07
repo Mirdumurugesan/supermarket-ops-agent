@@ -34,12 +34,27 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 # ------------------------------------------------------------------ model chain
 #
 # Comma-separated, best first. Format is "<provider>:<model>".
-#   groq      free, no card, very fast — the primary.
-#   openai    paid (~₹0.4 per demo run) — catches Groq's rate limits.
-#   openrouter-style free models, gemini, anthropic, cerebras also work; see
-#   README §1 for the trade-offs.
+#   groq      free, no card, very fast — the primary. 8k tokens/min per model.
+#   google    free, no card, 1M tokens/min — the safety net under Groq's quota.
+#   openai    paid — optional last resort; dropped automatically if unset.
 #
-DEFAULT_CHAIN = "groq:llama-3.3-70b-versatile,openai:gpt-4o-mini"
+# The order is deliberate. Groq is fastest, so it serves every turn it can, but
+# this agent sends ~3.85k tokens of schema per request against an 8k/min budget
+# — roughly every second request 429s. Groq meters *per model*, so the second
+# link is another Groq model with its own budget; Gemini's far larger window
+# then catches anything that gets past both. All three are free.
+#
+# Model IDs get retired, and the failure is a 404 at request time rather than
+# at startup — this bit twice while building (Groq moved the Llama models to
+# enterprise; Google closed gemini-2.5-flash to new keys). Both providers name
+# the replacement in the error body, so read it before guessing. To list what
+# your own keys can actually use:
+#   curl https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_API_KEY"
+#   curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GOOGLE_API_KEY"
+DEFAULT_CHAIN = ("groq:openai/gpt-oss-120b,"
+                 "groq:openai/gpt-oss-20b,"
+                 "google:gemini-3.6-flash,"
+                 "openai:gpt-4o-mini")
 
 MODEL_CHAIN_RAW = os.environ.get("KIRANA_MODELS", DEFAULT_CHAIN)
 

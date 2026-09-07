@@ -110,13 +110,12 @@ def _queue_file(path: str, caption: str) -> None:
 
 @tool(
     "search_products",
-    "Search the product catalog by name, brand or colloquial alias (e.g. 'atta', "
-    "'surf', 'paruppu', 'sakkarai'). ALWAYS call this before billing or changing "
-    "stock — never guess a product id, price or GST rate. Returns id, price, stock, "
-    "unit, whether the item is loose (fractional quantities allowed) and its GST slab. "
-    "If it returns two plausible matches, ask the owner which one they mean.",
+    "Find products by name, brand or colloquial alias ('atta', 'surf', 'paruppu'). "
+    "ALWAYS call before billing or changing stock — never guess an id, price or GST "
+    "rate. Returns id, price, stock, unit, is_loose and GST slab. If two plausible "
+    "matches come back, ask the owner which they mean.",
     schema({
-        "query": P("string", "What the owner called the item, in their own words."),
+        "query": P("string", "The item, in the owner's own words."),
     }, ["query"]),
 )
 async def search_products(args):
@@ -128,27 +127,22 @@ async def search_products(args):
 
 @tool(
     "add_product",
-    "Add a NEW product to the catalog (only when search_products found nothing). "
-    "Prices are in ₹ and sell_price is GST-INCLUSIVE, as Indian retail prices are. "
-    "Refuses a sell price below cost unless allow_below_cost is true, and always "
-    "refuses a sell price above MRP.",
+    "Add a NEW product (only if search_products found nothing). sell_price is "
+    "GST-INCLUSIVE ₹. Refuses below-cost without allow_below_cost, and above-MRP always.",
     schema({
-        "name": P("string", "Full product name, e.g. 'Amul Butter 100g'."),
-        "gst_rate": P("number", "GST slab as a percentage: 0, 5, 12, 18 or 28."),
-        "cost_price": P("number", "What the shop pays per unit."),
-        "sell_price": P("number", "What the customer pays per unit, GST-inclusive."),
-        "unit": P("string", "kg, g, litre, ml, packet, dozen or piece.",
+        "name": P("string", "Full name, e.g. 'Amul Butter 100g'."),
+        "gst_rate": P("number", "GST slab %: 0, 5, 12, 18 or 28."),
+        "cost_price": P("number", "Shop's cost per unit, ₹."),
+        "sell_price": P("number", "Customer price per unit, GST-inclusive ₹."),
+        "unit": P("string", "Unit of sale.",
                   enum=["kg", "g", "litre", "ml", "packet", "dozen", "piece"]),
-        "hsn": P("string", "HSN code for the item's tax category, e.g. '1902'."),
-        "mrp": P("number", "Maximum retail price printed on the pack, if any."),
-        "qty": P("number", "Opening stock quantity. Defaults to 0."),
-        "brand": P("string", "Brand name, e.g. 'Amul'."),
-        "is_loose": P("boolean", "True for items sold by weight/volume, where "
-                                 "fractional quantities like 2.5kg are valid."),
-        "aliases": P("string", "Comma-separated names the owner might use, "
-                               "including Tamil/Hindi ones, e.g. 'butter,vennai'."),
-        "allow_below_cost": P("boolean", "Set true ONLY after the owner explicitly "
-                                         "confirms selling below cost."),
+        "hsn": P("string", "HSN tax code, e.g. '1902'."),
+        "mrp": P("number", "Printed MRP, if any."),
+        "qty": P("number", "Opening stock. Default 0."),
+        "brand": P("string", "Brand, e.g. 'Amul'."),
+        "is_loose": P("boolean", "True if sold by weight/volume (2.5kg valid)."),
+        "aliases": P("string", "Comma-separated other names, incl. Tamil/Hindi."),
+        "allow_below_cost": P("boolean", "True only if owner confirmed below-cost."),
     }, ["name", "gst_rate", "cost_price", "sell_price"]),
 )
 async def add_product(args):
@@ -166,15 +160,14 @@ async def add_product(args):
 
 @tool(
     "receive_stock",
-    "Record goods received for an existing product ('50 packets of Maggi came in'). "
-    "Adds to stock and optionally updates cost, sell price or MRP in the same move. "
-    "Writes an audit row; never use it to reduce stock (use adjust_stock).",
+    "Goods received for an existing product ('50 packets of Maggi came in'). Adds "
+    "stock, optionally updating cost/price/MRP. Never reduces stock — use adjust_stock.",
     schema({
-        "product_id": P("integer", "Product id from search_products."),
-        "qty": P("number", "Quantity received. Must be positive."),
-        "cost_price": P("number", "New cost per unit, if it changed."),
-        "sell_price": P("number", "New GST-inclusive selling price, if it changed."),
-        "mrp": P("number", "New MRP, if it changed."),
+        "product_id": P("integer", "Id from search_products."),
+        "qty": P("number", "Quantity received, positive."),
+        "cost_price": P("number", "New cost, if changed."),
+        "sell_price": P("number", "New GST-inclusive price, if changed."),
+        "mrp": P("number", "New MRP, if changed."),
     }, ["product_id", "qty"]),
 )
 async def receive_stock(args):
@@ -188,17 +181,16 @@ async def receive_stock(args):
 
 @tool(
     "update_product",
-    "Change a product's price, MRP, reorder level or aliases, or deactivate it. "
-    "Products are deactivated, never deleted, so history stays intact.",
+    "Change price, MRP, reorder level or aliases, or deactivate. Products are "
+    "deactivated, never deleted.",
     schema({
-        "product_id": P("integer", "Product id from search_products."),
-        "sell_price": P("number", "New GST-inclusive selling price."),
-        "mrp": P("number", "New maximum retail price."),
-        "reorder_level": P("number", "Stock level at which to flag a reorder."),
-        "aliases": P("string", "Replacement comma-separated alias list."),
-        "active": P("boolean", "False to stop stocking this item."),
-        "allow_below_cost": P("boolean", "Set true ONLY after the owner explicitly "
-                                         "confirms pricing below cost."),
+        "product_id": P("integer", "Id from search_products."),
+        "sell_price": P("number", "New GST-inclusive price."),
+        "mrp": P("number", "New MRP."),
+        "reorder_level": P("number", "Level that flags a reorder."),
+        "aliases": P("string", "Replacement alias list."),
+        "active": P("boolean", "False to stop stocking."),
+        "allow_below_cost": P("boolean", "True only if owner confirmed below-cost."),
     }, ["product_id"]),
 )
 async def update_product(args):
@@ -213,12 +205,12 @@ async def update_product(args):
 
 @tool(
     "adjust_stock",
-    "Correct stock to a counted physical quantity (breakage, spoilage, stock-take). "
-    "Sets an absolute quantity and logs the difference; cannot go below zero.",
+    "Correct stock to a counted quantity (breakage, spoilage, stock-take). Sets an "
+    "absolute value and logs the delta; never below zero.",
     schema({
-        "product_id": P("integer", "Product id from search_products."),
-        "new_qty": P("number", "The quantity actually on the shelf now."),
-        "reason": P("string", "Short reason, e.g. 'breakage' or 'stock-take'."),
+        "product_id": P("integer", "Id from search_products."),
+        "new_qty": P("number", "Quantity actually on the shelf now."),
+        "reason": P("string", "Short reason, e.g. 'breakage'."),
     }, ["product_id", "new_qty"]),
 )
 async def adjust_stock(args):
@@ -231,7 +223,7 @@ async def adjust_stock(args):
 
 @tool(
     "stock_level",
-    "Current stock, price and reorder level for one product ('how much sugar is left?').",
+    "Stock, price and reorder level for one product ('how much sugar is left?').",
     schema({"product_id": P("integer", "Product id from search_products.")},
            ["product_id"]),
 )
@@ -257,8 +249,8 @@ async def low_stock_report(args):
 
 @tool(
     "get_current_bill",
-    "The open draft bill for this chat with its lines and running total, or null if "
-    "none. Call this when the owner refers to 'the bill' without naming one.",
+    "The open draft bill for this chat with lines and running total, or null. Use "
+    "when the owner says 'the bill' without naming one.",
     NO_ARGS,
 )
 async def get_current_bill(args):
@@ -267,8 +259,8 @@ async def get_current_bill(args):
 
 @tool(
     "start_bill",
-    "Open a new draft bill for this chat. Returns the existing draft if one is "
-    "already open, so calling it twice is safe. Drafting does not move stock.",
+    "Open a draft bill for this chat; returns the existing one if already open, so "
+    "calling twice is safe. Drafting does not move stock.",
     schema({"customer_name": P("string", "Customer's name, if the owner mentioned one.")}),
 )
 async def start_bill(args):
@@ -281,13 +273,12 @@ async def start_bill(args):
 
 @tool(
     "add_bill_item",
-    "Add a quantity of a product to a draft bill. Adding an item already on the bill "
-    "increases its quantity. Refuses more than current stock, and refuses fractional "
-    "quantities for packaged goods.",
+    "Add quantity of a product to a draft bill; adding again increases it. Refuses "
+    "more than stock, and fractional quantities for packaged goods.",
     schema({
         "bill_id": P("integer", "Draft bill id."),
-        "product_id": P("integer", "Product id from search_products."),
-        "qty": P("number", "Quantity to add, in the product's own unit."),
+        "product_id": P("integer", "Id from search_products."),
+        "qty": P("number", "Quantity to add, in the product's unit."),
     }, ["bill_id", "product_id", "qty"]),
 )
 async def add_bill_item(args):
@@ -300,8 +291,8 @@ async def add_bill_item(args):
 
 @tool(
     "set_bill_item_qty",
-    "Set a line's exact quantity on a draft bill — use for 'make it 6 Maggi'. "
-    "Pass qty=0 to remove the line entirely ('drop the butter').",
+    "Set a line's exact quantity on a draft bill ('make it 6 Maggi'). qty=0 removes "
+    "the line ('drop the butter').",
     schema({
         "bill_id": P("integer", "Draft bill id."),
         "product_id": P("integer", "Product id of the line to change."),
@@ -318,13 +309,13 @@ async def set_bill_item_qty(args):
 
 @tool(
     "set_payment_mode",
-    "Set how a draft bill will be paid. 'khata' puts the bill on a customer's credit "
-    "ledger and requires khata_customer. A payment mode is required before finalizing.",
+    "Set how a draft bill is paid. 'khata' bills a customer's credit ledger and needs "
+    "khata_customer. Required before finalizing.",
     schema({
         "bill_id": P("integer", "Draft bill id."),
         "mode": P("string", "Payment method.", enum=["cash", "upi", "card", "khata"]),
-        "reference": P("string", "UPI/card reference, if the owner gave one."),
-        "khata_customer": P("string", "Customer name — required when mode is 'khata'."),
+        "reference": P("string", "UPI/card reference, if given."),
+        "khata_customer": P("string", "Customer name — required for 'khata'."),
     }, ["bill_id", "mode"]),
 )
 async def set_payment_mode(args):
@@ -338,12 +329,10 @@ async def set_payment_mode(args):
 
 @tool(
     "finalize_bill",
-    "Close a draft bill: atomically decrements stock, computes GST totals, assigns an "
-    "invoice number and posts to khata if applicable. Refuses if any line exceeds "
-    "stock, and rolls the whole bill back — nothing is half-sold. Idempotent: "
-    "finalizing an already-finalized bill returns it unchanged rather than "
-    "double-charging. Confirm with the owner before calling unless they clearly said "
-    "to close it.",
+    "Close a draft bill: atomically decrements stock, computes GST, assigns an invoice "
+    "number, posts khata if applicable. Refuses and rolls back entirely if any line "
+    "exceeds stock. Idempotent — re-finalizing returns the same bill. Confirm with the "
+    "owner first unless they clearly said to close it.",
     schema({"bill_id": P("integer", "Draft bill id to finalize.")}, ["bill_id"]),
 )
 async def finalize_bill(args):
@@ -392,12 +381,12 @@ async def latest_bill(args):
 
 @tool(
     "khata_add_credit",
-    "Put an amount on a customer's khata (credit ledger) — 'put ₹500 on Ramesh's "
-    "credit'. Creates the customer if they're new. This INCREASES what they owe.",
+    "Put an amount on a customer's khata — 'put ₹500 on Ramesh's credit'. Creates the "
+    "customer if new. INCREASES what they owe.",
     schema({
         "customer": P("string", "Customer's name."),
-        "amount": P("number", "Amount in ₹ to add to their outstanding balance."),
-        "note": P("string", "What the credit was for."),
+        "amount": P("number", "Amount to add to their balance, ₹."),
+        "note": P("string", "What it was for."),
     }, ["customer", "amount"]),
 )
 async def khata_add_credit(args):
@@ -410,13 +399,12 @@ async def khata_add_credit(args):
 
 @tool(
     "khata_record_payment",
-    "Record a khata settlement — 'Ramesh paid ₹300'. This REDUCES what they owe. "
-    "Refuses if no khata exists for that customer, or if the payment would overshoot "
-    "their balance.",
+    "Record a khata settlement — 'Ramesh paid ₹300'. REDUCES what they owe. Refuses "
+    "if no khata exists or the payment overshoots the balance.",
     schema({
         "customer": P("string", "Customer's name."),
-        "amount": P("number", "Amount in ₹ received from the customer."),
-        "note": P("string", "Optional note, e.g. how they paid."),
+        "amount": P("number", "Amount received, ₹."),
+        "note": P("string", "Optional note."),
     }, ["customer", "amount"]),
 )
 async def khata_record_payment(args):
@@ -464,8 +452,8 @@ async def khata_all_balances(args):
 
 @tool(
     "daily_summary",
-    "The daily close for a date (today by default, IST): number of bills, revenue, "
-    "GST collected, cash vs UPI vs khata split, top items and khata outstanding.",
+    "Daily close for a date (today by default, IST): bills, revenue, GST collected, "
+    "payment split, top items, khata outstanding.",
     schema({"date": P("string", "Date as YYYY-MM-DD. Defaults to today in IST.")}),
 )
 async def daily_summary(args):
@@ -474,8 +462,8 @@ async def daily_summary(args):
 
 @tool(
     "sales_report",
-    "Sales aggregates over an inclusive IST date range: daily trend, top items by "
-    "revenue and margin, payment mix and GST collected per slab.",
+    "Sales aggregates for an inclusive IST date range: daily trend, top items, "
+    "payment mix, GST per slab.",
     schema({
         "date_from": P("string", "Start date, YYYY-MM-DD."),
         "date_to": P("string", "End date, YYYY-MM-DD, inclusive."),
@@ -487,8 +475,8 @@ async def sales_report(args):
 
 @tool(
     "reorder_suggestions",
-    "What to reorder, ranked by urgency — combines stock on hand with recent sales "
-    "velocity to estimate days of stock left.",
+    "What to reorder, ranked by urgency — stock on hand vs recent sales velocity, "
+    "with estimated days of stock left.",
     NO_ARGS,
 )
 async def reorder_suggestions(args):
@@ -499,9 +487,8 @@ async def reorder_suggestions(args):
 
 @tool(
     "generate_invoice_pdf",
-    "Generate the GST tax-invoice PDF for a FINALIZED bill and send it to the owner "
-    "on Telegram. Includes per-item HSN, CGST/SGST split, slab summary and round-off. "
-    "Draft bills have no invoice — finalize first.",
+    "Generate and send the GST tax-invoice PDF for a FINALIZED bill (per-item HSN, "
+    "CGST/SGST, slab summary, round-off). Finalize first — drafts have no invoice.",
     schema({"bill_id": P("integer", "Id of a finalized bill.")}, ["bill_id"]),
 )
 async def generate_invoice_pdf_tool(args):
@@ -516,9 +503,8 @@ async def generate_invoice_pdf_tool(args):
 
 @tool(
     "generate_analysis_deck",
-    "Generate the PowerPoint sales-analysis deck for an IST date range and send it on "
-    "Telegram: revenue trend, top sellers, payment mix, GST by slab, stock health and "
-    "written insights, with real charts.",
+    "Generate and send the PowerPoint sales-analysis deck for an IST date range: "
+    "revenue trend, top sellers, payment mix, GST by slab, stock health, insights.",
     schema({
         "date_from": P("string", "Start date, YYYY-MM-DD."),
         "date_to": P("string", "End date, YYYY-MM-DD, inclusive."),
@@ -537,14 +523,12 @@ async def generate_analysis_deck_tool(args):
 
 @tool(
     "set_preference",
-    "Save a lasting owner preference. This survives /new chats AND restarts — it is "
-    "the store's memory, not conversation history. Save one whenever the owner states "
-    "a standing rule ('always assume UPI', 'default atta is Aashirvaad 5kg', 'my "
-    "GSTIN is ...', 'shop name is ...'). Common keys: default_payment_mode, "
-    "default_atta, shop_name, shop_address, shop_phone, gstin, language.",
+    "Save a standing owner preference — survives /new and restarts. Use whenever the "
+    "owner states a lasting rule ('always assume UPI', 'my GSTIN is ...'). Keys: "
+    "default_payment_mode, default_atta, shop_name, shop_address, shop_phone, gstin, language.",
     schema({
-        "key": P("string", "Short snake_case key, e.g. 'default_payment_mode'."),
-        "value": P("string", "The value to remember."),
+        "key": P("string", "snake_case key, e.g. 'default_payment_mode'."),
+        "value": P("string", "Value to remember."),
     }, ["key", "value"]),
 )
 async def set_preference(args):
@@ -561,8 +545,8 @@ async def get_preferences(args):
 
 @tool(
     "delete_preference",
-    "Forget a saved preference — use when the owner drops a standing rule "
-    "('stop assuming UPI'). Does not touch stock, bills or khata.",
+    "Forget a saved preference when the owner drops a standing rule ('stop assuming "
+    "UPI'). Does not touch stock, bills or khata.",
     schema({"key": P("string", "The preference key to delete.")}, ["key"]),
 )
 async def delete_preference(args):

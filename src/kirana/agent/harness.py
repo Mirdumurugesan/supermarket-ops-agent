@@ -8,15 +8,26 @@ a node-per-command state machine. Pydantic AI gives exactly that loop, and one
 property the others don't: it is **model-agnostic**, and it ships a
 `FallbackModel` that turns a provider outage into a non-event.
 
-That matters here for a concrete reason, not tidiness. This agent's tool
-surface is ~4,300 tokens per request (29 tools with per-parameter descriptions)
-and a multi-item bill is several round-trips. Groq is the primary because it is
-free and very fast, but its free tier is metered at 6,000 tokens per minute, so
-a busy minute returns HTTP 429. Pydantic AI raises that as `ModelHTTPError`,
-`FallbackModel` catches it, and the next model in the chain finishes the turn
-with the conversation intact. The owner sees a slightly slower reply instead of
-an error — which is the difference between a store that stays open and one that
-doesn't.
+That matters here for a concrete, measured reason. This agent's tool surface is
+~3,850 tokens per request (29 tools with per-parameter descriptions) and a
+multi-item bill is several round-trips. Groq is the primary because it is free
+and very fast, but its free tier allows 8,000 tokens per minute *per model*, so
+roughly every second request returns HTTP 429. On this workload a rate limit is
+a normal operating condition, not an exception, and the design answers it in
+three layers:
+
+1. **Fail over.** `FallbackModel` moves the turn to the next model, which has
+   its own separate quota, with the conversation and draft bill intact.
+2. **Don't let the SDK swallow it.** Provider clients are built with
+   `max_retries=0` so a 429 surfaces immediately instead of being retried
+   under us with backoff — see `_no_internal_retry`.
+3. **Then wait it out.** If every model fails for a reason that passes on its
+   own, re-run the turn: a 429 waits exactly as long as the provider quotes
+   ("try again in 5.295s"), a 5xx overload backs off exponentially. A 404 or a
+   bad key is fatal and surfaces at once — see `rate_limit_wait_seconds`.
+
+The owner gets a slightly slower reply instead of an error, which is the
+difference between a store that stays open and one that doesn't.
 
 The chain is configuration (`KIRANA_MODELS`), and the boundary that makes it
 cost nothing is `tools.ToolSpec`: the store knows about no provider at all.
@@ -40,9 +51,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.tools import Tool
@@ -54,6 +67,59 @@ from .system_prompt import build_system_prompt
 from .tools import current_chat_id, current_update_id
 
 log = logging.getLogger(__name__)
+
+# How many times to re-attempt a turn when every model in the chain failed for
+# a reason that is expected to pass on its own.
+RATE_LIMIT_ATTEMPTS = 4
+MAX_RATE_LIMIT_WAIT = 45.0          # never leave the owner hanging longer than this
+
+# Provider overload / capacity blips: transient, retry with backoff.
+TRANSIENT_STATUS = frozenset({500, 502, 503, 504, 529})
+
+_RETRY_AFTER = re.compile(r"try again in ([0-9.]+)\s*s", re.I)
+
+
+def rate_limit_wait_seconds(exc: BaseException, attempt: int = 0) -> float | None:
+    """How long to wait before re-running this turn, or None if it's fatal.
+
+    When every model in the chain fails, Pydantic AI raises a
+    `FallbackExceptionGroup` holding one `ModelHTTPError` per model. Two of
+    those statuses are worth waiting on, and they want different treatment:
+
+    * **429 — quota exhausted.** Groq's body says precisely when its window
+      rolls over ("Please try again in 5.295s"), so honour the longest quoted
+      wait rather than guessing at a curve. The provider knows; we don't.
+    * **5xx — provider overloaded.** Gemini answers 503 "experiencing high
+      demand… usually temporary" under load. Nothing is quoted, so back off
+      exponentially and try again.
+
+    Anything else — a 404 for a retired model id, a bad key, a bug — is fatal
+    and must surface immediately rather than sleeping three times first.
+
+    This matters because the tool surface costs ~3.8k tokens per request
+    against Groq's 8k/minute: on free tiers, quota and capacity blips are
+    normal weather, and waiting turns a failed turn into a slightly slow one.
+    """
+    waits: list[float] = []
+
+    def walk(e: BaseException, depth: int = 0) -> None:
+        if depth > 6 or e is None:
+            return
+        if isinstance(e, ModelHTTPError):
+            if e.status_code == 429:
+                match = _RETRY_AFTER.search(str(e.body))
+                waits.append(float(match.group(1)) if match else 10.0)
+            elif e.status_code in TRANSIENT_STATUS:
+                waits.append(2.0 * (2 ** attempt))      # 2s, 4s, 8s
+        for sub in getattr(e, "exceptions", ()):        # ExceptionGroup members
+            walk(sub, depth + 1)
+        if e.__cause__ is not None:
+            walk(e.__cause__, depth + 1)
+
+    walk(exc)
+    if not waits:
+        return None
+    return min(max(waits) + 0.5, MAX_RATE_LIMIT_WAIT)   # small cushion
 
 
 def _build_tools() -> list[Tool]:
@@ -168,16 +234,33 @@ class AgentManager:
         log.info("chat %s: conversation cleared", chat_id)
 
     async def handle_message(self, chat_id: int, update_id: int, text: str) -> str:
-        """Run one agent turn and return the reply for Telegram."""
+        """Run one agent turn and return the reply for Telegram.
+
+        If every model in the chain is rate-limited, wait exactly as long as
+        the provider asks and try again. See :func:`rate_limit_wait_seconds`.
+        """
         session = self._session(chat_id)
         async with session.lock:                       # strict per-chat ordering
             current_chat_id.set(chat_id)               # ambient tool context
             current_update_id.set(str(update_id))
-            result = await self._agent.run(
-                text,
-                message_history=session.history,
-                usage_limits=UsageLimits(request_limit=MAX_STEPS_PER_TURN),
-            )
+
+            for attempt in range(RATE_LIMIT_ATTEMPTS):
+                try:
+                    result = await self._agent.run(
+                        text,
+                        message_history=session.history,
+                        usage_limits=UsageLimits(request_limit=MAX_STEPS_PER_TURN),
+                    )
+                    break
+                except Exception as exc:               # noqa: BLE001
+                    wait = rate_limit_wait_seconds(exc, attempt)
+                    if wait is None or attempt == RATE_LIMIT_ATTEMPTS - 1:
+                        raise
+                    log.warning("chat %s: whole chain unavailable, waiting %.1fs "
+                                "(attempt %d/%d)", chat_id, wait, attempt + 1,
+                                RATE_LIMIT_ATTEMPTS)
+                    await asyncio.sleep(wait)
+
             session.history = result.all_messages()
             self._trim(session)
             return (result.output or "Done.").strip()

@@ -62,6 +62,42 @@ def _mark_sent(outbox_id: int) -> None:
         tx.execute("UPDATE outbox SET sent=1 WHERE id=?", (outbox_id,))
 
 
+def _explain_failure(exc: Exception) -> str:
+    """Turn a crashed turn into something the shop owner can act on.
+
+    A generic "internal error" tells the owner nothing and, during a review,
+    looks identical whether the cause is a free-tier quota or a real bug. The
+    books are always safe — every write is transactional — so the useful part
+    of the message is *what to do next*.
+    """
+    from pydantic_ai.exceptions import (ModelHTTPError, UnexpectedModelBehavior,
+                                        UsageLimitExceeded)
+
+    if isinstance(exc, ModelHTTPError):
+        if exc.status_code == 429:
+            return ("⏳ The free model quota is full for the minute — nothing was "
+                    "billed or changed. Give it about a minute and send that again.")
+        if exc.status_code in (401, 403):
+            return ("🔑 The model provider rejected my API key. Check GROQ_API_KEY "
+                    "in .env — the books are untouched.")
+        if exc.status_code >= 500:
+            return ("☁️ The model provider is having trouble right now. Nothing was "
+                    "changed — please try again in a moment.")
+        return (f"⚠️ The model provider returned an error ({exc.status_code}). "
+                "Nothing was changed.")
+
+    if isinstance(exc, UsageLimitExceeded):
+        return ("🔁 That turn needed too many steps, so I stopped rather than spin. "
+                "Nothing was changed — try breaking it into smaller messages.")
+
+    if isinstance(exc, UnexpectedModelBehavior):
+        return ("🤔 I got confused working that one out — nothing was changed. "
+                "Could you rephrase it?")
+
+    return ("⚠️ I hit an internal error — the books are untouched. "
+            "Please send that again.")
+
+
 class KiranaBot:
     def __init__(self) -> None:
         self.agents = AgentManager()
@@ -93,10 +129,9 @@ class KiranaBot:
         await ctx.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
         try:
             reply = await self.agents.handle_message(chat_id, update.update_id, msg.text)
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             log.exception("agent turn crashed")
-            await msg.reply_text("⚠️ I hit an internal error — the books are untouched. "
-                                 "Please send that again.")
+            await msg.reply_text(_explain_failure(e))
             return
 
         for i in range(0, len(reply), 4000):           # Telegram 4096-char limit

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 
 from kirana.services import analytics_service as analytics
@@ -114,6 +116,19 @@ def test_stock_cannot_be_adjusted_negative(db):
 
 
 # -------------------------------------------------------------- analytics
+
+def test_ist_timezone_is_available_on_this_platform():
+    """Regression guard: Windows ships no system tz database.
+
+    The store closes its day in IST, so ZoneInfo("Asia/Kolkata") must resolve
+    everywhere the bot runs. Without the `tzdata` package this raises
+    ZoneInfoNotFoundError on Windows at import time — the whole bot fails to
+    start, and it passes silently on Linux CI.
+    """
+    from zoneinfo import ZoneInfo
+    assert ZoneInfo("Asia/Kolkata").utcoffset(datetime(2026, 9, 6)).total_seconds() == 19800
+
+
 
 def test_daily_summary_reflects_finalized_sales_only(db):
     draft = billing.create_draft(CHAT)

@@ -1,7 +1,14 @@
-"""Test fixtures: each test gets a fresh, isolated SQLite database."""
+"""Test fixtures: each test gets a fresh, isolated SQLite database.
+
+The suite must run on a clean clone with no API keys and no network — that is
+the point of testing the store rather than the model. Two things make that
+true, and both have to happen *before* `kirana.config` is imported, because it
+resolves the model chain at module level:
+"""
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -9,6 +16,20 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+
+# 1. Placeholder provider keys. No test ever calls a provider — the model is
+#    always a scripted FunctionModel — but *constructing* the model chain reads
+#    each key from the environment. Without these, `pytest` on a fresh checkout
+#    fails for a reason unrelated to the code under test. Tests that care about
+#    a key being absent delete it themselves via monkeypatch.
+for _var in ("GROQ_API_KEY", "GOOGLE_API_KEY"):
+    os.environ.setdefault(_var, "placeholder-never-called")
+
+# 2. Ignore any developer .env sitting in the repo. Otherwise the suite's
+#    behaviour depends on whose machine it runs on, which is how a test ends up
+#    passing in CI and failing for the person who cloned it.
+os.environ.setdefault("KIRANA_MODELS",
+                      "groq:openai/gpt-oss-120b,groq:openai/gpt-oss-20b")
 
 from kirana.db import database  # noqa: E402
 
