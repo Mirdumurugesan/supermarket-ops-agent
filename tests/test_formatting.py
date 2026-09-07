@@ -89,3 +89,15 @@ def test_a_short_message_is_not_split():
 def test_strip_tags_is_a_readable_last_resort():
     """If Telegram ever rejects the markup, the owner still gets his total."""
     assert strip_tags("<b>Total:</b> ₹144.00") == "Total: ₹144.00"
+
+
+def test_a_leaked_json_tail_is_trimmed():
+    """gpt-oss occasionally appends a fragment of its own envelope: `... 📄"}`."""
+    assert to_telegram_html('Confirm to finalize? 📄"}') == "Confirm to finalize? 📄"
+    assert to_telegram_html("Total ₹144.00\n\nConfirm?\"}]") == "Total ₹144.00\n\nConfirm?"
+
+
+def test_balanced_braces_are_left_alone():
+    """A reply that legitimately ends in a brace must survive."""
+    assert to_telegram_html("set it with {mode: upi}").endswith("{mode: upi}")
+    assert "<code>{}</code>" in to_telegram_html("send `{}` to reset")

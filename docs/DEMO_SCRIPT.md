@@ -158,7 +158,7 @@ bill 4 maggi
 
 ### 4:30 — Close (15s)
 
-> "102 tests cover the GST maths, the oversell guard, idempotent retries and
+> "104 tests cover the GST maths, the oversell guard, idempotent retries and
 > threaded concurrency — all of them pass with the LLM removed, because the
 > rules aren't in the prompt. Thanks."
 

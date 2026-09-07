@@ -43,12 +43,25 @@ _HRULE = re.compile(r"^\s*([-*_])(?:\s*\1){2,}\s*$", re.M)
 # to a search for "#INV". The invoice number is not a topic; drop the hash.
 _HASHTAG_ID = re.compile(r"#(?=[A-Z]{2,}[-–]?\d)")
 _TAG = re.compile(r"<[^>]+>")
+# Models sometimes leak a tail of their own JSON envelope onto the end of a
+# reply — `Confirm to finalize? 📄"}`. Strip a trailing run of quote/brace/
+# bracket characters, but only when the message has more closers than openers,
+# so a reply that legitimately ends in `}` (a code span, a dict the owner asked
+# about) is left alone.
+_JSON_TAIL = re.compile(r"[\s\"'`]*[}\]]+[\s\"'`]*\Z")
 
 _SENTINEL = "\x00{}\x00"
 
 
+def _strip_json_tail(text: str) -> str:
+    if text.count("{") >= text.count("}") and text.count("[") >= text.count("]"):
+        return text
+    return _JSON_TAIL.sub("", text).rstrip()
+
+
 def to_telegram_html(text: str) -> str:
     """Markdown as the model writes it → HTML as Telegram parses it."""
+    text = _strip_json_tail(text)
     stash: list[str] = []
 
     def _keep(fragment: str) -> str:

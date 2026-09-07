@@ -244,7 +244,7 @@ health page when the host sets `$PORT`, so it runs on free *web service* tiers
 (Hugging Face Spaces, Render) with no credit card. See
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-**Tests:** `pytest -q` → 102 tests, ~5 seconds, no API key and no network needed.
+**Tests:** `pytest -q` → 104 tests, ~5 seconds, no API key and no network needed.
 
 | File | Covers |
 |---|---|
@@ -299,5 +299,5 @@ src/kirana/
   docs_gen/    invoice_pdf.py · analysis_pptx.py
   telegram/    bot.py        ← transport only: dedup, outbox, /new
   health.py    tiny status endpoint so free web-service tiers will host it
-tests/         102 tests, all green, no API key, no network
+tests/         104 tests, all green, no API key, no network
 ```
