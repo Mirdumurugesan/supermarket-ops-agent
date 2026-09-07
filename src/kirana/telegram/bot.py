@@ -16,19 +16,21 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from telegram import Update
-from telegram.constants import ChatAction
+from telegram import Message, Update
+from telegram.constants import ChatAction, ParseMode
+from telegram.error import BadRequest
 from telegram.ext import (Application, CommandHandler, ContextTypes,
                           MessageHandler, filters)
 
 from ..agent.harness import AgentManager
 from ..config import ALLOWED_USER_IDS, TELEGRAM_BOT_TOKEN
 from ..db.database import get_conn, transaction
+from .formatting import split_for_telegram, strip_tags, to_telegram_html
 
 log = logging.getLogger(__name__)
 
 WELCOME = (
-    "🛒 *Kirana Ops Agent*\n"
+    "🛒 **Kirana Ops Agent**\n"
     "I run your shop. Talk to me like you'd talk to your billing boy:\n\n"
     "• `50 packets Maggi came in, cost ₹12, MRP ₹14`\n"
     "• `bill: 2kg sugar, 1 atta, 4 maggi — UPI`\n"
@@ -36,7 +38,7 @@ WELCOME = (
     "• `put ₹500 on Ramesh's credit` · `Ramesh paid ₹300`\n"
     "• `today's sales?` · `send me that bill as PDF`\n"
     "• `make this week's analysis deck`\n\n"
-    "_/new starts a fresh chat (I still remember your preferences)._"
+    "*/new starts a fresh chat — I still remember your preferences.*"
 )
 
 
@@ -98,6 +100,23 @@ def _explain_failure(exc: Exception) -> str:
             "Please send that again.")
 
 
+async def _send_rendered(msg: Message, text: str) -> None:
+    """Send the agent's reply as formatted text, in Telegram-sized pieces.
+
+    The model writes Markdown; Telegram renders none of it without a parse
+    mode, so the owner would otherwise read the asterisks. If Telegram ever
+    rejects the markup, the message still goes out as plain text — a reply the
+    owner can read beats a formatting error he can't.
+    """
+    for chunk in split_for_telegram(to_telegram_html(text)):
+        try:
+            await msg.reply_text(chunk, parse_mode=ParseMode.HTML,
+                                 disable_web_page_preview=True)
+        except BadRequest:
+            log.warning("Telegram rejected the rendered markup; sending plain")
+            await msg.reply_text(strip_tags(chunk))
+
+
 class KiranaBot:
     def __init__(self) -> None:
         self.agents = AgentManager()
@@ -105,7 +124,7 @@ class KiranaBot:
     # ------------------------------------------------------------- handlers
 
     async def cmd_start(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        await update.message.reply_markdown(WELCOME)
+        await _send_rendered(update.message, WELCOME)
 
     async def cmd_new(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await self.agents.new_chat(update.effective_chat.id)
@@ -134,8 +153,7 @@ class KiranaBot:
             await msg.reply_text(_explain_failure(e))
             return
 
-        for i in range(0, len(reply), 4000):           # Telegram 4096-char limit
-            await msg.reply_text(reply[i:i + 4000])
+        await _send_rendered(msg, reply)
 
         for outbox_id, path, caption in _drain_outbox(chat_id):
             try:

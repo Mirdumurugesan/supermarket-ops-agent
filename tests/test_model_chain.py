@@ -1,10 +1,11 @@
 """The model chain: graceful degradation and real failover.
 
-Groq's free tier is metered at 6,000 tokens/minute and this agent sends ~4,300
-tokens of tool schema per request, so HTTP 429 is an expected operating
-condition, not an exceptional one. These tests pin the two behaviours that
-depend on it: a chain with a missing key still starts, and a rate-limited
-primary hands the turn to the next model without the owner seeing an error.
+Groq's free tier is metered at 8,000 tokens/minute *per model* and this agent
+sends ~3,850 tokens of tool schema per request, so HTTP 429 is an expected
+operating condition, not an exceptional one. These tests pin the behaviours
+that depend on it: a chain with a missing key still starts, a rate-limited
+primary hands the turn to the next model without the owner seeing an error,
+and an exhausted chain waits exactly as long as the provider asks.
 """
 
 from __future__ import annotations

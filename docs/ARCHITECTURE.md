@@ -45,17 +45,17 @@ SDK first. It works well, and the swap touched ~120 lines because the tool
 surface never depended on either. What decided it was a constraint I measured
 rather than a preference:
 
-This agent presents 29 tools with per-parameter descriptions — about **4,300
+This agent presents 29 tools with per-parameter descriptions — about **3,850
 tokens of schema on every request**. A single "2kg sugar, 1 atta, 4 Maggi, UPI"
-is six model round-trips, so one owner message costs roughly 30,000 tokens.
-Groq's free tier is metered at 6,000 tokens per minute. That makes HTTP 429 a
-*normal operating condition* for this workload, not an exception — and a store
-that stops taking bills when the quota trips is not a store.
+is six model round-trips, so one owner message costs roughly 25,000 tokens.
+Groq's free tier is metered at 8,000 tokens per minute *per model*. That makes
+HTTP 429 a *normal operating condition* for this workload, not an exception —
+and a store that stops taking bills when the quota trips is not a store.
 
 So the model is a **chain**, not a choice:
 
 ```bash
-KIRANA_MODELS=groq:llama-3.3-70b-versatile,openai:gpt-4o-mini
+KIRANA_MODELS=groq:openai/gpt-oss-120b,groq:openai/gpt-oss-20b,google:gemini-3.6-flash
 ```
 
 Groq serves every turn it can. When it returns 429, Pydantic AI raises
@@ -64,17 +64,34 @@ same tools, same draft bill — to the next model, which finishes it. The owner
 sees a slightly slower reply instead of an error. `test_model_chain.py` proves
 this with a primary that raises 429 and a fallback that answers.
 
+Because Groq meters *per model*, the second link is a second Groq model with
+its own budget — a free retry that costs one extra hop. Gemini's much wider
+window then catches anything that gets past both.
+
+Two failure modes had to be handled explicitly, and both fail silently if you
+get them wrong:
+
+- **Provider-side retries are disabled** (`max_retries=0` on each client). The
+  Groq and OpenAI SDKs retry a 429 internally with backoff before raising,
+  which swallows the error — `FallbackModel` never fires and the bot simply
+  hangs for two minutes. Retrying is the chain's decision, not the SDK's.
+- **An exhausted chain waits, but only for the right reasons.** A 429 sleeps
+  exactly as long as the provider quotes ("try again in 5.295s"); a 503
+  ("experiencing high demand") backs off exponentially; a 404 for a retired
+  model id or a 401 for a bad key is fatal and surfaces immediately instead of
+  sleeping three times first.
+
 Three properties fall out of that design, and they're the ones I'd defend:
 
 - **It degrades instead of breaking.** A model whose API key is absent is
   dropped from the chain at startup with a warning. With only the free
-  `GROQ_API_KEY` set, the bot runs at zero cost — it just slows for a minute
-  when the quota trips rather than failing over. Adding a key later changes no
-  code.
+  `GROQ_API_KEY` set, the bot still runs — it just waits out a quota trip
+  rather than failing over. Adding a key later changes no code.
 - **The store knows about no provider at all.** `tools.py` imports no agent
   framework; `config.py` is the only file that names a vendor.
-- **It's honest about cost.** Groq is free. The OpenAI fallback is paid, and
-  cheap (~₹0.40 for a full demo run on `gpt-4o-mini`) — but optional.
+- **It costs nothing to run.** Every link in the default chain is free and
+  needs no credit card. `openai:gpt-4o-mini` can be appended as a paid last
+  resort (~₹0.40 for a full demo run), but nothing depends on it.
 
 ## 2. Architecture
 
@@ -208,15 +225,17 @@ python -m src.kirana.main
 ```
 TELEGRAM_BOT_TOKEN=...     # @BotFather on Telegram — free
 GROQ_API_KEY=...           # console.groq.com/keys — free, no credit card
-OPENAI_API_KEY=            # optional fallback; leave blank to run at zero cost
-KIRANA_MODELS=groq:llama-3.3-70b-versatile,openai:gpt-4o-mini
+GOOGLE_API_KEY=...         # aistudio.google.com/apikey — free, no credit card
+OPENAI_API_KEY=            # optional paid last resort; blank is fine
+KIRANA_MODELS=groq:openai/gpt-oss-120b,groq:openai/gpt-oss-20b,google:gemini-3.6-flash
 ```
 
-Groq alone is enough to run everything. The OpenAI key only changes what
-happens when Groq's free quota trips mid-bill: with it, the turn finishes on
-the fallback; without it, the turn waits. Startup validates the config, drops
-unusable models from the chain with a warning, and fails with an actionable
-message rather than dying on the owner's first message.
+Groq alone is enough to run everything. The Gemini key only changes what
+happens when both Groq models trip their quota mid-bill: with it, the turn
+finishes on the fallback; without it, the turn waits out the window Groq
+quotes. Startup validates the config, drops unusable models from the chain with
+a warning, and fails with an actionable message rather than dying on the
+owner's first message.
 
 **Docker:** `docker build -t kirana-agent . && docker run --env-file .env -v $(pwd)/data:/app/data kirana-agent`.
 
@@ -225,7 +244,7 @@ health page when the host sets `$PORT`, so it runs on free *web service* tiers
 (Hugging Face Spaces, Render) with no credit card. See
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-**Tests:** `pytest -q` → 71 tests, ~5 seconds, no API key and no network needed.
+**Tests:** `pytest -q` → 90 tests, ~5 seconds, no API key and no network needed.
 
 | File | Covers |
 |---|---|
@@ -280,5 +299,5 @@ src/kirana/
   docs_gen/    invoice_pdf.py · analysis_pptx.py
   telegram/    bot.py        ← transport only: dedup, outbox, /new
   health.py    tiny status endpoint so free web-service tiers will host it
-tests/         71 tests, all green, no API key, no network
+tests/         90 tests, all green, no API key, no network
 ```

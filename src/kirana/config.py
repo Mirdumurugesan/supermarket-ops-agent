@@ -6,9 +6,11 @@ which one catches it when the first fails — is configuration.
 
 Why a chain rather than one model:
 
-* Groq's free tier is fast but metered at 6,000 tokens/minute. This agent's
-  tool surface is ~4,300 tokens of schema per request, and a multi-item bill is
-  several round-trips, so a busy minute *will* return HTTP 429.
+* Groq's free tier is fast but metered at 8,000 tokens/minute *per model*. This
+  agent's tool surface is ~3,850 tokens of schema per request, and a multi-item
+  bill is several round-trips, so a busy minute *will* return HTTP 429. Because
+  the metering is per model, the second link is a second Groq model with its
+  own budget.
 * A 429 is a `ModelHTTPError`, which is exactly what the harness's
   `FallbackModel` is configured to fall over on. The next model in the chain
   picks the turn up mid-conversation and the owner never sees an error.

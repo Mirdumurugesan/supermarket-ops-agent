@@ -10,15 +10,39 @@ Everything below is free with **no credit card**.
 
 ---
 
-## Option A — Hugging Face Spaces (recommended)
+## Option A — Render free web service (what this bot runs on)
 
-Free, no card, and a Docker Space runs your image as-is.
+1. Push to GitHub → [render.com](https://render.com) → **New → Web Service** →
+   connect the repo.
+2. Language **Docker** — it reads the `Dockerfile`. Instance type **Free**.
+3. **Environment** → add:
+   ```
+   TELEGRAM_BOT_TOKEN=...
+   GROQ_API_KEY=...
+   GOOGLE_API_KEY=...        # free, no card — this is what catches Groq's 429s
+   OPENAI_API_KEY=           # optional, paid; blank is fine
+   ```
+   Render sets `PORT` itself — don't set it.
+4. Deploy. Open the Render URL: you should see the JSON status page listing the
+   resolved model chain. Then message the bot on Telegram.
 
-1. huggingface.co → sign up → **New Space**
-   - SDK: **Docker** → *Blank*
-   - Visibility: **Public** is fine (your secrets go in Settings, not the repo)
-2. Push this project into the Space repo, and add one line to `README.md` at
-   the Space root so HF knows which port to expose:
+**Keep it awake.** A free instance sleeps after ~15 minutes with no traffic,
+and a sleeping bot doesn't poll Telegram. Create a free monitor at
+[uptimerobot.com](https://uptimerobot.com) (no card) → **HTTP(s)** → your
+Render URL → interval 5 minutes. That's what the health page is for.
+
+**Storage caveat:** the free instance's disk is ephemeral — a redeploy resets
+the store to seed data. That's fine for a review, and arguably good (reviewers
+get a clean shop). It's noted here so it reads as a decision, not a surprise.
+
+## Option B — Hugging Face Spaces
+
+Free, no card, and a Docker Space runs the image as-is.
+
+1. huggingface.co → **New Space** → SDK **Docker** → *Blank*. Public is fine;
+   secrets go in Settings, not the repo.
+2. Push the project into the Space repo and add a header to the Space's root
+   `README.md` so HF knows which port to expose:
    ```
    ---
    title: Kirana Ops Agent
@@ -26,34 +50,9 @@ Free, no card, and a Docker Space runs your image as-is.
    app_port: 7860
    ---
    ```
-3. **Settings → Variables and secrets**, add as *secrets*:
-   ```
-   TELEGRAM_BOT_TOKEN=...
-   GROQ_API_KEY=...
-   OPENAI_API_KEY=...        # optional — omit to run at zero cost
-   PORT=7860
-   ```
-4. It builds and starts. Open the Space URL — you should see the JSON status
-   page. Message the bot on Telegram to confirm.
-
-**Keep it awake.** Free Spaces pause after a stretch with no traffic. Create a
-free monitor at [uptimerobot.com](https://uptimerobot.com) (no card) pointed at
-your Space URL, interval 5 minutes. That's what the health page is for.
-
-**Storage caveat:** a free Space's disk is ephemeral — a rebuild resets the
-store to seed data. That's *fine for a review*, and arguably good (reviewers
-get a clean shop). Say so in your README so it reads as a decision, not a bug.
-
-## Option B — Render free web service
-
-Also free, no card.
-
-1. Push to GitHub → render.com → **New → Web Service** → connect the repo
-2. Runtime **Docker**; it reads the `Dockerfile`
-3. **Environment** → add `TELEGRAM_BOT_TOKEN` and `GROQ_API_KEY` (plus
-   `OPENAI_API_KEY` if you want the fallback). Render sets `PORT` itself.
-4. Free instances sleep after ~15 minutes idle — point UptimeRobot at the
-   Render URL the same way.
+3. **Settings → Variables and secrets** → the same four keys as above, plus
+   `PORT=7860`.
+4. Same UptimeRobot monitor, pointed at the Space URL.
 
 ## Option C — your laptop (backup only)
 
@@ -74,28 +73,37 @@ key or three.
 
 | Model | Cost | Free-tier ceiling | Role |
 |---|---|---|---|
-| `groq:llama-3.3-70b-versatile` | **free**, no card | 6,000 tokens/min, 1,000 req/day | **Primary.** Very fast. This agent sends ~4,300 tokens of tool schema per request, so a long multi-item bill can trip the per-minute quota. |
-| `openai:gpt-4o-mini` | paid, ~₹0.40 per demo run | — | **Fallback.** Picks up a turn Groq rate-limited, conversation intact. Optional. |
+| `groq:openai/gpt-oss-120b` | **free**, no card | 8,000 tokens/min | **Primary.** Strong tool-calling, fastest replies. This agent sends ~3,850 tokens of schema per request, so a long bill trips the per-minute quota routinely. |
+| `groq:openai/gpt-oss-20b` | **free**, no card | its own 8,000/min | **Second.** Groq meters *per model*, so a 429 on the 120B rolls here and stays free. |
+| `google:gemini-3.6-flash` | **free**, no card | 1M tokens/min | **Safety net.** Far wider window; catches whatever gets past both Groq models. Occasionally answers 503 under load, which the harness backs off and retries. |
+| `openai:gpt-4o-mini` | paid, ~₹0.40 per demo run | — | **Optional last resort.** Not in the default chain. |
 
 ```bash
-# default — free primary, paid safety net
-KIRANA_MODELS=groq:llama-3.3-70b-versatile,openai:gpt-4o-mini
-
-# strictly zero cost — just leave OPENAI_API_KEY blank
-KIRANA_MODELS=groq:llama-3.3-70b-versatile
+# default — three free models, no credit card anywhere
+KIRANA_MODELS=groq:openai/gpt-oss-120b,groq:openai/gpt-oss-20b,google:gemini-3.6-flash
 ```
 
-**Running Groq-only?** Everything works. When the per-minute quota trips, that
-turn waits instead of failing over, so keep demo bills to three or four items
-and pause a beat between messages. Nothing breaks — it just slows.
+**Running Groq-only?** Everything works. When both Groq models trip their
+quota, the turn waits out the window Groq quotes rather than failing over — so
+keep demo bills to three or four items and pause a beat between messages.
+Nothing breaks; it just slows.
 
-Keys: [console.groq.com/keys](https://console.groq.com/keys) (free, no card) ·
-[platform.openai.com/api-keys](https://platform.openai.com/api-keys) (paid)
+Both Groq and Google retire model IDs periodically, and a retired ID surfaces
+as a 404 at the first message. List what your keys can actually use:
+
+```bash
+curl https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_API_KEY"
+curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GOOGLE_API_KEY"
+```
+
+Keys: [console.groq.com/keys](https://console.groq.com/keys) ·
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey) — both free,
+no card.
 
 ## Health checks
 
 ```bash
-curl https://<your-space-or-render-url>/     # status, model chain, bill count
+curl https://<your-render-url>/     # status, resolved model chain, bill count
 
 sqlite3 data/kirana.db "SELECT COUNT(*) FROM bills WHERE status='finalized';"
 sqlite3 data/kirana.db "SELECT key, value FROM preferences;"
@@ -103,8 +111,8 @@ sqlite3 data/kirana.db "SELECT key, value FROM preferences;"
 
 ## Before you submit
 
-- [ ] Bot handle written into the README (replacing `@YOUR_BOT_HANDLE`)
+- [ ] Bot handle and demo-video link at the top of the README
 - [ ] `.env` not committed — `git log --all --full-history -- .env` returns nothing
 - [ ] Deployed instance answering, uptime monitor pinging it
-- [ ] `pytest -q` green on a clean clone (71 tests)
+- [ ] `pytest -q` green on a clean clone (90 tests)
 - [ ] Repo **private**, with `Aswath363`, `akshaiP`, `ashwanthnebula` invited

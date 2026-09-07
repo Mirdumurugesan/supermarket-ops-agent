@@ -10,7 +10,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env                          # fill in the two keys below
 python scripts/seed.py
-pytest -q                                     # expect: 71 passed
+pytest -q                                     # expect: 90 passed
 python -m src.kirana.main
 ```
 
@@ -20,26 +20,30 @@ You need two free things; a third is optional.
 `/newbot` → pick a name and a handle → paste the token into `.env`. Handle
 suggestion: something store-ish and clearly yours, e.g. `@mirdu_kirana_bot`.
 
-**Groq API key** (free, no credit card) —
+**Groq API key** (free, no card) —
 [console.groq.com/keys](https://console.groq.com/keys) → Create API key →
-paste as `GROQ_API_KEY`. This alone runs the whole project.
+paste as `GROQ_API_KEY`. This is the primary model: fastest, but only 8,000
+tokens/minute per model.
 
-**OpenAI key** (optional, paid) — only affects what happens when Groq's free
-per-minute quota trips mid-bill: with it the turn finishes on the fallback,
-without it the turn waits. A whole demo run costs about ₹0.40 on
-`gpt-4o-mini`. Leave `OPENAI_API_KEY` blank to stay at exactly zero.
+**Gemini API key** (free, no card) —
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey) → Create API
+key → paste as `GOOGLE_API_KEY`. This is the safety net: 1M tokens/minute, so
+it catches whatever Groq throttles. Needed for a demo that doesn't stall.
+
+**OpenAI key** (optional, paid) — a last resort behind both. Leave
+`OPENAI_API_KEY` blank; it's dropped from the chain automatically.
 
 Send the bot `/start`, then run three or four lines from the demo script. If
 those work, everything works.
 
 ## 2. Deploy (20 min, free)
 
-Follow [`DEPLOYMENT.md`](DEPLOYMENT.md) — Hugging Face Spaces (Docker), no
+Follow [`DEPLOYMENT.md`](DEPLOYMENT.md) — Render free web service (Docker), no
 credit card, plus a free UptimeRobot monitor so it never idles. Confirm the
 deployed bot answers before moving on, then **leave it running through the
 review**.
 
-Put the real handle in the README (replace `@YOUR_BOT_HANDLE`, top of file).
+Put the real bot handle at the top of the README.
 
 ## 3. Git history (15 min)
 
@@ -74,8 +78,8 @@ testing as you go — and let the messages say **why**, not just what:
 23. chore: Dockerfile and deployment guide
 ```
 
-`scripts/make_history.sh` in this repo will replay that sequence for you if you
-prefer — but read each commit before you push it. You should be able to
+`scripts/make_history.sh` (or `scripts/make_history.ps1` on Windows) replays
+that sequence for you — but read each commit before you push it. You should be able to
 explain any line in this repo in an interview, because they will ask.
 
 ## 4. GitHub (10 min)
@@ -113,21 +117,35 @@ retries and concurrency — a data-layer problem. Pydantic AI gives me the
 observe → act → feed-back loop without me hand-writing state transitions.
 
 **"Why not the Claude Agent SDK?"**
-I built it on that first. The tool surface is 4,300 tokens of schema per
-request, and one multi-item bill is six round-trips — about 30,000 tokens per
+I built it on that first. The tool surface is ~3,850 tokens of schema per
+request, and one multi-item bill is six round-trips — about 25,000 tokens per
 owner message. That makes the free-tier token ceiling a hard design constraint,
 so I needed the provider to be swappable. The swap cost ~120 lines because
 `tools.py` never imported an agent framework, which is the part I'd actually
 point at: the boundary was there before I needed it.
 
 **"Why a model chain instead of just picking one?"**
-The tool surface is ~4,300 tokens per request and a multi-item bill is six
-round-trips, so on Groq's free tier — 6,000 tokens/minute — HTTP 429 is a
-normal operating condition, not an exception. `FallbackModel` hands that same
-turn to the next model with the conversation and draft bill intact, so the
-owner sees a slower reply instead of a dead shop. A model whose key is missing
-is dropped from the chain at startup, so the bot still runs on Groq alone.
-`test_model_chain.py` proves both paths.
+The tool surface is ~3,850 tokens per request and a multi-item bill is six
+round-trips, so on Groq's free tier — 8,000 tokens/minute *per model* — HTTP
+429 is a normal operating condition, not an exception. `FallbackModel` hands
+that same turn to the next model with the conversation and draft bill intact,
+so the owner sees a slower reply instead of a dead shop. The chain is ordered
+around how each provider meters: Groq is metered per model, so the second link
+is a second Groq model with its own budget — a free retry — and Gemini's much
+wider window sits behind both. A model whose key is missing is dropped at
+startup, so the bot still runs on Groq alone. `test_model_chain.py` proves both
+paths, and a third: when the entire chain is exhausted, the wait is exactly as
+long as the provider quotes, capped at 45 seconds so the owner is never left
+hanging.
+
+**"What was the hardest bug?"**
+The failover silently not happening. Groq's free tier 429s often for this
+workload, and I had a chain configured — but the bot still hung for two minutes
+per message. The Groq SDK was retrying the 429 internally with backoff before
+raising, so `FallbackModel` never saw an error to fall over on. Setting
+`max_retries=0` on each client made the 429 surface immediately and the chain
+work as designed. There's a test asserting it now, because it fails silently:
+everything "works", just slowly, which is the worst kind of broken.
 
 **"How do you know the tools are wired correctly if you can't test the model?"**
 `test_agent_loop.py` replaces the model with a scripted one and asserts on what
