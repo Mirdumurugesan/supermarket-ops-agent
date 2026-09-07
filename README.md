@@ -105,12 +105,18 @@ example sentences. Three decisions carry the design:
 prompt carries persona and orchestration habits only — every test passes with
 the LLM removed.
 
-**Two of the stretch goals are in:** invoices are *templated* — shop name,
+**Three of the stretch goals are in.** Invoices are *templated* — shop name,
 address and GSTIN come from durable preferences, so `set shop name to …`
-changes every future invoice without a redeploy. And `what's running out?`
-answers from **sales velocity**, not a fixed threshold: it divides stock by
-units sold per day and ranks by days of cover, so a fast-moving SKU at 20 units
-outranks a slow one at 5.
+changes every future invoice without a redeploy. `what's running out?` answers
+from **sales velocity**, not a fixed threshold: stock divided by units sold per
+day, ranked by days of cover, so a fast-moving SKU at 20 units outranks a slow
+one at 5. And it is **multi-language** — but the language is chosen in code, not
+by the model. Left to the prompt, "reply in the language they used" made a
+Tamil product alias in an English sentence (`2kg sakkarai`) produce an entirely
+Hindi bill, and the reply then drifted into Marathi halfway down. So
+`detect_reply_language()` reads the script the owner actually typed in and the
+instruction is injected per message. Same lesson as the oversell guard: if it
+has to be true, it doesn't belong in the prompt.
 
 ## Run it
 
@@ -118,7 +124,7 @@ outranks a slow one at 5.
 pip install -r requirements.txt
 cp .env.example .env          # TELEGRAM_BOT_TOKEN + GROQ_API_KEY + GOOGLE_API_KEY (all free)
 python scripts/seed.py        # 25 real SKUs
-pytest -q                     # 90 passed, ~5s, no API key needed
+pytest -q                     # 102 passed, ~5s, no API key needed
 python -m src.kirana.main
 ```
 
@@ -138,6 +144,6 @@ src/kirana/
   db/        schema.sql · database.py                                 ← invariants as constraints
   docs_gen/  invoice_pdf.py · analysis_pptx.py
   telegram/  bot.py · formatting.py    health.py
-tests/       90 tests — GST maths, oversell, idempotency, threaded concurrency,
+tests/       102 tests — GST maths, oversell, idempotency, threaded concurrency,
              the agent loop, model failover, reply rendering. No key, no network.
 ```

@@ -4,8 +4,9 @@ Record your screen with the Telegram chat visible. Speak briefly over each
 section — reviewers are grading whether *you* understand what the system does,
 not your presentation skills. Don't rush; the whole run is ~30 messages.
 
-**Before you start:** fresh DB (`rm data/kirana.db && python scripts/seed.py`),
-bot running, Telegram open full-screen.
+**Before you start:** demo against the **deployed** bot — that is the one the
+reviewers will drive. Confirm it answers, then open Telegram full-screen and
+send `/new` so the recording starts on an empty conversation.
 
 ---
 
@@ -157,7 +158,7 @@ bill 4 maggi
 
 ### 4:30 — Close (15s)
 
-> "71 tests cover the GST maths, the oversell guard, idempotent retries and
+> "102 tests cover the GST maths, the oversell guard, idempotent retries and
 > threaded concurrency — all of them pass with the LLM removed, because the
 > rules aren't in the prompt. Thanks."
 

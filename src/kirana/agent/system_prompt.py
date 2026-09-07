@@ -7,6 +7,8 @@ Owner preferences (durable memory) are injected fresh at session start.
 
 from __future__ import annotations
 
+import unicodedata
+from contextvars import ContextVar
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -14,13 +16,54 @@ from ..services import memory_service
 
 IST = ZoneInfo("Asia/Kolkata")
 
+# The language of the *current* message, decided in code before the model runs.
+# See `detect_reply_language`.
+current_language: ContextVar[str] = ContextVar("current_language", default="English")
+
+# Scripts the owner might actually type in. Devanagari covers Hindi and Marathi.
+_SCRIPTS = {"DEVANAGARI": "Hindi", "TAMIL": "Tamil", "TELUGU": "Telugu",
+            "KANNADA": "Kannada", "MALAYALAM": "Malayalam", "BENGALI": "Bengali",
+            "GUJARATI": "Gujarati", "GURMUKHI": "Punjabi"}
+
+
+def detect_reply_language(text: str) -> str:
+    """Which language should the reply be in? Decided by script, not by vibes.
+
+    Left to the prompt alone, a small model reads "2kg sakkarai" or a Hindi
+    product alias as permission to answer entirely in Hindi — and this one
+    drifted into Marathi mid-reply. Indian retail vocabulary inside an English
+    sentence is English, so the rule is mechanical: the reply follows the script
+    the owner actually typed in, and a message with no Indic characters gets
+    English. A prompt asks; this decides.
+    """
+    counts: dict[str, int] = {}
+    for ch in text:
+        if not ch.isalpha():
+            continue
+        try:
+            script = unicodedata.name(ch).split()[0]
+        except ValueError:                       # unnamed codepoint
+            continue
+        if script in _SCRIPTS:
+            counts[_SCRIPTS[script]] = counts.get(_SCRIPTS[script], 0) + 1
+
+    if not counts:
+        return "English"
+    return max(counts, key=counts.__getitem__)
+
 
 def build_system_prompt() -> str:
     prefs = memory_service.get_preferences()
     pref_lines = "\n".join(f"  - {k}: {v}" for k, v in prefs.items()) or "  (none saved yet)"
     now = datetime.now(IST)
+    language = current_language.get()
 
-    return f"""You are the operations agent for a small Indian kirana / supermarket.
+    return f"""WRITE YOUR ENTIRE REPLY IN {language.upper()}. Every word of it —
+headings, item names, units, labels and the closing question. Do not translate
+product names into another language and do not mix scripts. This is decided for
+you per message; it is not a judgement call.
+
+You are the operations agent for a small Indian kirana / supermarket.
 The shop owner runs the ENTIRE store by chatting with you on Telegram — receiving
 stock, cutting bills, checking stock, khata (customer credit), daily close,
 invoices and analysis decks. There is no other interface.
@@ -37,15 +80,11 @@ save it with set_preference immediately — it must survive new chats.
 
 ## How to work
 - The owner types terse shopkeeper language, sometimes in Hindi or Tamil
-  ("2kg sakkarai", "surf 1"). Understand all of it.
-- **Reply in the language of the owner's message, and default to English.**
-  Indian retail words inside an English sentence — sakkarai, atta, paruppu,
-  khata, dal — are ordinary English-in-India vocabulary, NOT a language switch:
-  "bill: 2kg sakkarai, 4 maggi, UPI" is an English message and gets an English
-  reply. Switch to Hindi or Tamil only when the owner's sentence itself is
-  written in that language (Devanagari or Tamil script, or a clearly
-  transliterated sentence like "kitna stock bacha hai"). Never translate
-  product names, headings or labels the owner did not use.
+  ("2kg sakkarai", "surf 1"). Understand all of it — but reply in the language
+  named at the top of these instructions, which is chosen per message from the
+  script the owner typed in. Indian retail words inside an English sentence
+  (sakkarai, atta, paruppu, khata, dal) are English-in-India vocabulary, not a
+  language switch.
 - ALWAYS resolve products with search_products first. Never invent products,
   prices, stock numbers or GST rates — everything comes from tools.
 - Chain tools freely in one turn: a message like "bill: 2kg sugar, 1 atta,

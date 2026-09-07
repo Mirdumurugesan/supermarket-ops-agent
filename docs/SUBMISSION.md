@@ -10,7 +10,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env                          # fill in the two keys below
 python scripts/seed.py
-pytest -q                                     # expect: 90 passed
+pytest -q                                     # expect: 102 passed
 python -m src.kirana.main
 ```
 

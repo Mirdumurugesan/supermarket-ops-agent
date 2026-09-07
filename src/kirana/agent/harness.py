@@ -63,7 +63,8 @@ from pydantic_ai.usage import UsageLimits
 
 from ..config import MAX_STEPS_PER_TURN, MODEL_CHAIN
 from . import tools as tool_registry
-from .system_prompt import build_system_prompt
+from .system_prompt import (build_system_prompt, current_language,
+                            detect_reply_language)
 from .tools import current_chat_id, current_update_id
 
 log = logging.getLogger(__name__)
@@ -243,6 +244,10 @@ class AgentManager:
         async with session.lock:                       # strict per-chat ordering
             current_chat_id.set(chat_id)               # ambient tool context
             current_update_id.set(str(update_id))
+            # Reply language is decided here, from the script the owner typed
+            # in, and injected into the instructions — not left to the model,
+            # which reads an Indian product alias as licence to switch language.
+            current_language.set(detect_reply_language(text))
 
             for attempt in range(RATE_LIMIT_ATTEMPTS):
                 try:

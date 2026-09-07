@@ -114,5 +114,5 @@ sqlite3 data/kirana.db "SELECT key, value FROM preferences;"
 - [ ] Bot handle and demo-video link at the top of the README
 - [ ] `.env` not committed — `git log --all --full-history -- .env` returns nothing
 - [ ] Deployed instance answering, uptime monitor pinging it
-- [ ] `pytest -q` green on a clean clone (90 tests)
+- [ ] `pytest -q` green on a clean clone (102 tests)
 - [ ] Repo **private**, with `Aswath363`, `akshaiP`, `ashwanthnebula` invited
