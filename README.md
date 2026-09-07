@@ -1,6 +1,6 @@
 # Kirana Ops Agent
 
-Run an entire Indian kirana store from a Telegram chat — receive stock, cut and
+Run an entire Indian kirana store from a Telegram chat - receive stock, cut and
 edit bills, run khata, close the day, generate GST invoices and analysis decks.
 No web app, no admin panel, no forms. The chat *is* the product.
 
@@ -22,7 +22,7 @@ Agent: ✅ INV-20260906-003 · ₹437 · UPI. Want the PDF?
 
 ## The harness, and why
 
-**Pydantic AI.** It gives the control loop the brief asks for — observe → reason
+**Pydantic AI.** It gives the control loop the brief asks for - observe → reason
 → act → feed the result back → continue — with tool calls chained (and
 parallelised) by the model, not by me. Explicitly not a LangGraph-style
 node-per-command machine: that would re-encode in graph edges the routing the
@@ -30,7 +30,7 @@ model should be doing.
 
 I built this on the Claude Agent SDK first and moved. The reason was measured,
 not aesthetic: **29 tools with per-parameter descriptions cost ~4,300 tokens of
-schema per request**, and a multi-item bill is six round-trips — roughly 30,000
+schema per request**, and a multi-item bill is six round-trips - roughly 30,000
 tokens per owner message. Groq's free tier allows 6,000 tokens/minute, so HTTP
 429 is a *normal operating condition* here. So the model is a chain, not a
 choice:
@@ -40,7 +40,7 @@ KIRANA_MODELS=groq:llama-3.3-70b-versatile,openai:gpt-4o-mini
 ```
 
 Groq serves every turn it can; on a 429, `FallbackModel` hands the same turn —
-same conversation, same draft bill — to the next model, which finishes it. A
+same conversation, same draft bill - to the next model, which finishes it. A
 model with no API key is dropped at startup, so the bot runs on the free Groq
 key alone. Pydantic AI was the harness that made the store provider-agnostic.
 
@@ -56,7 +56,7 @@ because they live in SQLite and are re-read into the instructions every run.
 ## Skill & tool design
 
 29 thin tools in six groups — inventory, billing, khata, analytics, documents,
-memory — designed around the store's capabilities rather than the brief's
+memory - designed around the store's capabilities rather than the brief's
 example sentences. Three decisions carry the design:
 
 - **One tool per state transition, no mega-tool.** There is no
@@ -67,7 +67,7 @@ example sentences. Three decisions carry the design:
   schema marks every field required, forcing the model to invent an MRP on
   every `add_product`. Each parameter carries its own description; tool-call
   accuracy tracks these more closely than prompt wording.
-- **Chat scoping is ambient.** Billing tools never accept a `chat_id` — it
+- **Chat scoping is ambient.** Billing tools never accept a `chat_id`- it
   rides on a contextvar, so one chat cannot touch another's draft bill.
 
 ## The hard parts
@@ -102,10 +102,10 @@ python -m src.kirana.main
 
 ## More
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — full tool inventory, the harness
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - full tool inventory, the harness
   migration in detail, trade-offs, what I'd do with more time
-- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — free 24/7 hosting, the model chain
-- `scripts/smoke_demo.py` — a full day of trading through the services, no LLM
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) - free 24/7 hosting, the model chain
+- `scripts/smoke_demo.py`- a full day of trading through the services, no LLM
 
 ```
 src/kirana/
@@ -114,6 +114,6 @@ src/kirana/
   db/        schema.sql · database.py                                 ← invariants as constraints
   docs_gen/  invoice_pdf.py · analysis_pptx.py
   telegram/  bot.py    health.py
-tests/       71 tests — GST maths, oversell, idempotency, threaded concurrency,
+tests/       71 tests - GST maths, oversell, idempotency, threaded concurrency,
              the agent loop, and model failover. No API key, no network.
 ```
