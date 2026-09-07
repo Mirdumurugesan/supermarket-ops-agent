@@ -101,3 +101,31 @@ def test_balanced_braces_are_left_alone():
     """A reply that legitimately ends in a brace must survive."""
     assert to_telegram_html("set it with {mode: upi}").endswith("{mode: upi}")
     assert "<code>{}</code>" in to_telegram_html("send `{}` to reset")
+
+
+def test_a_markdown_table_becomes_a_readable_block():
+    """Telegram has no tables. The model writes them anyway, so render them.
+
+    Seen live in a Hindi bill: the owner got a wall of pipes and dashes.
+    """
+    out = to_telegram_html(
+        "| वस्तु | मात्रा | कुल |\n"
+        "|---|---|---|\n"
+        "| Loose Sugar | 2 kg | ₹88.00 |\n"
+        "| Maggi | 4 pkt | ₹56.00 |"
+    )
+    assert "|---|" not in out and "---" not in out
+    assert out.startswith("<pre>") and out.endswith("</pre>")
+    assert "Loose Sugar  2 kg    ₹88.00" in out      # columns line up
+    assert "Maggi        4 pkt   ₹56.00" in out
+
+
+def test_a_table_keeps_the_prose_around_it():
+    out = to_telegram_html("**Draft bill:**\n| Item | Qty |\n|---|---|\n| Maggi | 4 |\n\nConfirm?")
+    assert "<b>Draft bill:</b>" in out
+    assert "<pre>" in out
+    assert out.rstrip().endswith("Confirm?")
+
+
+def test_a_pipe_in_ordinary_text_is_not_a_table():
+    assert "<pre>" not in to_telegram_html("cash | upi | card — pick one")

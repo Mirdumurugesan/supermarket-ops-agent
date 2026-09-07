@@ -53,6 +53,46 @@ _JSON_TAIL = re.compile(r"[\s\"'`]*[}\]]+[\s\"'`]*\Z")
 _SENTINEL = "\x00{}\x00"
 
 
+_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
+_TABLE_RULE = re.compile(r"^[\s|:\-]+$")
+
+
+def _render_tables(text: str, keep) -> str:
+    """Markdown tables → aligned monospace blocks.
+
+    Telegram has no table markup, so a table the model emits arrives as a wall
+    of pipes and dashes — which is exactly what a bill of items looks like when
+    the model decides to be tidy. Rendering the columns into a <pre> block gives
+    the owner something readable on a phone, and drops the |---|---| rule that
+    only ever meant "this is a table" to a Markdown renderer.
+    """
+    out, block = [], []
+
+    def flush():
+        if not block:
+            return
+        rows = [[c.strip() for c in r.strip().strip("|").split("|")]
+                for r in block if not _TABLE_RULE.match(r.strip().strip("|"))]
+        block.clear()
+        if not rows:
+            return
+        width = max(len(r) for r in rows)
+        rows = [r + [""] * (width - len(r)) for r in rows]
+        cols = [max(len(r[i]) for r in rows) for i in range(width)]
+        lines = ["  ".join(c.ljust(cols[i]) for i, c in enumerate(r)).rstrip()
+                 for r in rows]
+        out.append(keep("<pre>" + html.escape("\n".join(lines), quote=False) + "</pre>"))
+
+    for line in text.split("\n"):
+        if _TABLE_ROW.match(line):
+            block.append(line)
+        else:
+            flush()
+            out.append(line)
+    flush()
+    return "\n".join(out)
+
+
 def _strip_json_tail(text: str) -> str:
     if text.count("{") >= text.count("}") and text.count("[") >= text.count("]"):
         return text
@@ -74,6 +114,7 @@ def to_telegram_html(text: str) -> str:
     text = _INLINE_CODE.sub(
         lambda m: _keep("<code>" + html.escape(m.group(1), quote=False) + "</code>"),
         text)
+    text = _render_tables(text, _keep)
 
     # Only &, < and > are special in Telegram's HTML. Quotes are left alone:
     # escaping them would put &quot; in front of the owner for no reason.
