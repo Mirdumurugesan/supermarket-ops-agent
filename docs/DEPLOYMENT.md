@@ -108,11 +108,3 @@ curl https://<your-render-url>/     # status, resolved model chain, bill count
 sqlite3 data/kirana.db "SELECT COUNT(*) FROM bills WHERE status='finalized';"
 sqlite3 data/kirana.db "SELECT key, value FROM preferences;"
 ```
-
-## Before you submit
-
-- [ ] Bot handle and demo-video link at the top of the README
-- [ ] `.env` not committed — `git log --all --full-history -- .env` returns nothing
-- [ ] Deployed instance answering, uptime monitor pinging it
-- [ ] `pytest -q` green on a clean clone (118 tests)
-- [ ] Repo **private**, with `Aswath363`, `akshaiP`, `ashwanthnebula` invited
