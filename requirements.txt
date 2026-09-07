@@ -1,0 +1,15 @@
+# Agent harness — model-agnostic, so the store isn't coupled to one provider.
+pydantic-ai-slim[groq,openai]>=1.0
+
+# Telegram transport
+python-telegram-bot>=21.0
+python-dotenv>=1.0.0
+
+# Artifacts the agent generates
+reportlab>=4.0.0
+python-pptx>=1.0.0
+matplotlib>=3.8.0
+
+# Tests
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
