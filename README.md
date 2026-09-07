@@ -105,6 +105,13 @@ example sentences. Three decisions carry the design:
 prompt carries persona and orchestration habits only — every test passes with
 the LLM removed.
 
+**Two of the stretch goals are in:** invoices are *templated* — shop name,
+address and GSTIN come from durable preferences, so `set shop name to …`
+changes every future invoice without a redeploy. And `what's running out?`
+answers from **sales velocity**, not a fixed threshold: it divides stock by
+units sold per day and ranks by days of cover, so a fast-moving SKU at 20 units
+outranks a slow one at 5.
+
 ## Run it
 
 ```bash
